@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  python-ai:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    image: trulylied-python-ai:latest
+    container_name: trulylied-python-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+    restart: unless-stopped
+
+  go-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trulylied-go-backend:latest
+    container_name: trulylied-go-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # The Go backend needs to talk to the Python AI. 
+      # Because they are in the same docker-compose network, 
+      # it can just use the service name "python-ai" as the hostname!
+      - PYTHON_AI_URL=http://python-ai:8000
+    depends_on:
+      - python-ai
+    restart: unless-stopped
+    volumes:
+      # This ensures the SQLite database persists on the EC2 drive even if the container restarts
+      - ./data:/app/data
