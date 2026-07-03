@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+trafilatura
+youtube-transcript-api
+requests
+pydantic
+python-dotenv
+duckduckgo-search

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "TrulyLied — Fact Checker",
+  "version": "1.0.0",
+  "description": "Instantly fact-check the current page with TrulyLied AI. One click to analyse any news article, blog, or YouTube video.",
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Fact-check this page",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://localhost:8080/*"]
+}

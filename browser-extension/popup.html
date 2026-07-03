@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrulyLied</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+    }
+
+    .header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #1f1f1f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .header-text h1 { font-size: 15px; font-weight: 700; color: #fff; }
+    .header-text p { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+    .url-preview {
+      padding: 10px 16px;
+      background: #111;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .url-label { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+    .url-text { font-size: 11px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    .analyze-btn {
+      width: 100%;
+      padding: 12px;
+      background: #fff;
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .analyze-btn:hover { background: #e5e5e5; }
+    .analyze-btn:active { transform: scale(0.98); }
+    .analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .status-msg {
+      text-align: center;
+      font-size: 12px;
+      color: #6b7280;
+      min-height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .status-msg.success { color: #34d399; }
+    .status-msg.error { color: #f87171; }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #333;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .history-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #4b5563;
+      text-decoration: none;
+      padding: 6px;
+      border-radius: 8px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .history-link:hover { color: #9ca3af; background: #111; }
+
+    .footer {
+      padding: 10px 16px;
+      border-top: 1px solid #1a1a1a;
+      display: flex;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">🛡️</div>
+    <div class="header-text">
+      <h1>TrulyLied</h1>
+      <p>AI-Powered Fact Checker</p>
+    </div>
+  </div>
+
+  <div class="url-preview">
+    <div class="url-label">Current Page</div>
+    <div class="url-text" id="currentUrl">Loading…</div>
+  </div>
+
+  <div class="body">
+    <button class="analyze-btn" id="analyzeBtn">
+      🔍 Fact-Check This Page
+    </button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <div class="footer">
+    <a class="history-link" id="historyLink" href="http://localhost:3000/history" target="_blank">
+      🕐 View Analysis History
+    </a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
