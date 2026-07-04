@@ -19,7 +19,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`http://localhost:8080/api/report/${resolvedParams.id}`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/report/${resolvedParams.id}`)
       .then(res => res.json())
       .then(data => {
         if (data.report) setReportData(data.report);
@@ -29,7 +29,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
       })
       .catch(console.error);
 
-    const ws = new WebSocket(`ws://localhost:8080/ws/report/${resolvedParams.id}`);
+    const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace("http", "ws") : "ws://localhost:8080"}/ws/report/${resolvedParams.id}`);
     ws.onopen = () => console.log("WS Connected");
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -47,7 +47,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         });
       } else if (msg.status === "report_done") {
         setStatus("done");
-        fetch(`http://localhost:8080/api/report/${resolvedParams.id}`)
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/report/${resolvedParams.id}`)
           .then(res => res.json())
           .then(data => { if (data.report) setReportData(data.report); });
       }
