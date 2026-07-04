@@ -6,3 +6,6 @@ requests
 pydantic
 python-dotenv
 duckduckgo-search
+huggingface_hub
+beautifulsoup4
+groq
