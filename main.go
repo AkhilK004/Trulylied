@@ -25,7 +25,7 @@ func main() {
 
 	// CORS — allow the Next.js frontend (adjust origin in production)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://your-amplify-url.amplifyapp.com"},
+		AllowOriginFunc:  func(origin string) bool { return true },
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
 		ExposeHeaders:    []string{"X-RateLimit-Limit", "X-RateLimit-Remaining"},
