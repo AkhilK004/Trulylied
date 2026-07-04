@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const pythonServiceURL = "http://localhost:8000"
+const pythonServiceURL = "http://python-ai:8000"
 
 type ExtractionResult struct {
 	Text        string `json:"text"`
