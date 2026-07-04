@@ -1,18 +1,3 @@
-# Build Stage
-FROM golang:alpine AS builder
-
-WORKDIR /app
-
-# Copy go mod and sum files
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy the source code
-COPY . .
-
-# Build the application statically without CGO
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
-
 # Final Stage
 FROM alpine:latest
 
@@ -21,8 +6,9 @@ RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy the binary from builder
-COPY --from=builder /app/main .
+# Copy the pre-compiled binary
+COPY main-linux ./main
+RUN chmod +x ./main
 
 # Expose port
 EXPOSE 8080
