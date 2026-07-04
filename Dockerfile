@@ -1,9 +1,6 @@
 # Build Stage
 FROM golang:alpine AS builder
 
-# Install build dependencies for go-sqlite3 (requires CGO)
-RUN apk add --no-cache gcc musl-dev
-
 WORKDIR /app
 
 # Copy go mod and sum files
@@ -13,8 +10,8 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application with CGO enabled (required for sqlite3)
-RUN CGO_ENABLED=1 GOOS=linux go build -o main .
+# Build the application statically without CGO
+RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Final Stage
 FROM alpine:latest
