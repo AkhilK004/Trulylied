@@ -67,7 +67,7 @@ export default function HistoryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/reports`)
+    fetch(`http://13.235.68.66:8080/api/reports`)
       .then(r => r.json())
       .then(d => {
         setReports(d.reports || []);

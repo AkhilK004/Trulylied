@@ -30,12 +30,12 @@ function CompareContent() {
     try {
       // Start both analyses
       const [res1, res2] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/analyze`, {
+        fetch(`http://13.235.68.66:8080/api/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: url1 }),
         }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/analyze`, {
+        fetch(`http://13.235.68.66:8080/api/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: url2 }),
@@ -166,7 +166,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
   useEffect(() => {
     if (!reportId) return;
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/report/${reportId}`)
+    fetch(`http://13.235.68.66:8080/api/report/${reportId}`)
       .then(res => res.json())
       .then(data => {
         if (data.report) setReportData(data.report);
@@ -175,7 +175,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
       })
       .catch(console.error);
 
-    const ws = new WebSocket(`${process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace("http", "ws") : "ws://localhost:8080"}/ws/report/${reportId}`);
+    const ws = new WebSocket(`ws://13.235.68.66:8080/ws/report/${reportId}`);
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.status === "extracted" || msg.status === "decomposed") {
@@ -187,7 +187,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
         }
       } else if (msg.status === "report_done") {
         setStatus("done");
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/report/${reportId}`)
+        fetch(`http://13.235.68.66:8080/api/report/${reportId}`)
           .then(res => res.json())
           .then(data => { if (data.report) setReportData(data.report); });
       }

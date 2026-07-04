@@ -12,7 +12,7 @@ export default function TrendsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/trends`)
+    fetch(`http://13.235.68.66:8080/api/trends`)
       .then(r => r.json())
       .then(d => {
         setData(d);
