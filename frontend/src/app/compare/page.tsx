@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
+import { API_URL, WS_URL } from "@/lib/config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Loader2, ArrowRightLeft, Search, Clock, Link as LinkIcon, CheckCircle2, ExternalLink } from "lucide-react";
@@ -30,12 +31,12 @@ function CompareContent() {
     try {
       // Start both analyses
       const [res1, res2] = await Promise.all([
-        fetch(`http://13.235.68.66:8080/api/analyze`, {
+        fetch(`${API_URL}/api/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: url1 }),
         }),
-        fetch(`http://13.235.68.66:8080/api/analyze`, {
+        fetch(`${API_URL}/api/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: url2 }),
@@ -166,7 +167,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
   useEffect(() => {
     if (!reportId) return;
 
-    fetch(`http://13.235.68.66:8080/api/report/${reportId}`)
+    fetch(`${API_URL}/api/report/${reportId}`)
       .then(res => res.json())
       .then(data => {
         if (data.report) setReportData(data.report);
@@ -175,7 +176,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
       })
       .catch(console.error);
 
-    const ws = new WebSocket(`ws://13.235.68.66:8080/ws/report/${reportId}`);
+    const ws = new WebSocket(`${WS_URL}/ws/report/${reportId}`);
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.status === "extracted" || msg.status === "decomposed") {
@@ -187,7 +188,7 @@ function CompareColumn({ reportId, label }: { reportId: string, label: string })
         }
       } else if (msg.status === "report_done") {
         setStatus("done");
-        fetch(`http://13.235.68.66:8080/api/report/${reportId}`)
+        fetch(`${API_URL}/api/report/${reportId}`)
           .then(res => res.json())
           .then(data => { if (data.report) setReportData(data.report); });
       }

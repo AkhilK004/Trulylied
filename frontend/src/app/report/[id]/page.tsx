@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { API_URL, WS_URL } from "@/lib/config";
 import {
   CheckCircle2, XCircle, AlertTriangle, HelpCircle, Loader2,
   Link as LinkIcon, HeartPulse, Quote, AlertOctagon, ShieldCheck,
@@ -19,7 +20,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
 
   useEffect(() => {
-    fetch(`http://13.235.68.66:8080/api/report/${resolvedParams.id}`)
+    fetch(`${API_URL}/api/report/${resolvedParams.id}`)
       .then(res => res.json())
       .then(data => {
         if (data.report) setReportData(data.report);
@@ -29,7 +30,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
       })
       .catch(console.error);
 
-    const ws = new WebSocket(`ws://13.235.68.66:8080/ws/report/${resolvedParams.id}`);
+    const ws = new WebSocket(`${WS_URL}/ws/report/${resolvedParams.id}`);
     ws.onopen = () => console.log("WS Connected");
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -47,7 +48,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         });
       } else if (msg.status === "report_done") {
         setStatus("done");
-        fetch(`http://13.235.68.66:8080/api/report/${resolvedParams.id}`)
+        fetch(`${API_URL}/api/report/${resolvedParams.id}`)
           .then(res => res.json())
           .then(data => { if (data.report) setReportData(data.report); });
       }

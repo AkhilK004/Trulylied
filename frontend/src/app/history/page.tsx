@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_URL } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Clock, ExternalLink, ShieldCheck, CheckCircle2, XCircle, AlertTriangle, Loader2, Search, BarChart3 } from "lucide-react";
@@ -67,7 +68,7 @@ export default function HistoryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch(`http://13.235.68.66:8080/api/reports`)
+    fetch(`${API_URL}/api/reports`)
       .then(r => r.json())
       .then(d => {
         setReports(d.reports || []);

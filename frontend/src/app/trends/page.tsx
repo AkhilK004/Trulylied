@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_URL } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { TrendingUp, Clock, ExternalLink, ShieldCheck, ArrowRightLeft, Activity } from "lucide-react";
@@ -12,7 +13,7 @@ export default function TrendsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch(`http://13.235.68.66:8080/api/trends`)
+    fetch(`${API_URL}/api/trends`)
       .then(r => r.json())
       .then(d => {
         setData(d);

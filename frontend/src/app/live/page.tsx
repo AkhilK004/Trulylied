@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { API_URL, WS_URL } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -124,7 +125,7 @@ export default function LivePage() {
     setStatus("starting");
 
     try {
-      const res = await fetch(`http://13.235.68.66:8080/api/analyze-live`, {
+      const res = await fetch(`${API_URL}/api/analyze-live`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -142,7 +143,7 @@ export default function LivePage() {
   useEffect(() => {
     if (!reportId) return;
 
-    const ws = new WebSocket(`ws://13.235.68.66:8080/ws/report/${reportId}`);
+    const ws = new WebSocket(`${WS_URL}/ws/report/${reportId}`);
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
 
@@ -172,7 +173,7 @@ export default function LivePage() {
       } else if (msg.status === "report_done") {
         setStatus("done");
         // Fetch the overall report data (trust score, etc.)
-        fetch(`http://13.235.68.66:8080/api/report/${reportId}`)
+        fetch(`${API_URL}/api/report/${reportId}`)
           .then(res => res.json())
           .then(data => {
             if (data.report) setReportData(data.report);
@@ -599,7 +600,7 @@ export default function LivePage() {
                                   try {
                                     const contextString = `Transcript Segment: "${chunk.text}"\nAI Verdict: ${chunk.verdict}\nReasoning: ${chunk.reasoning}\nCitations: ${chunk.citations?.join(', ')}`;
                                     
-                                    const res = await fetch("http://localhost:8000/chat", {
+                                    const res = await fetch(`${API_URL}/chat`, {
                                       method: "POST",
                                       headers: { "Content-Type": "application/json" },
                                       body: JSON.stringify({ question: q, context: contextString })

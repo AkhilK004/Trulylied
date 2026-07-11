@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/lib/config";
 import { Search, Loader2, ShieldCheck, Zap, Activity, Clock, Radio } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -19,7 +20,7 @@ export default function Home() {
     setError("");
 
     try {
-      const res = await fetch(`http://13.235.68.66:8080/api/analyze`, {
+      const res = await fetch(`${API_URL}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
