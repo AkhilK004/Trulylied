@@ -105,128 +105,162 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
             return params.get("v")
     return None
 
-def fetch_transcript_via_api(video_id: str) -> List[dict]:
-    """
-    Fetch a YouTube transcript using the official YouTube Data API v3.
-    Returns a list of dicts: [{text, start, duration}, ...]
-    Works from any IP including AWS — bypasses the youtube-transcript-api block.
-    Requires YOUTUBE_API_KEY env var.
-    """
-    if not YOUTUBE_API_KEY:
-        raise Exception("YOUTUBE_API_KEY not set")
+_PROXY_CACHE = []
+_PROXY_CACHE_TIME = 0
 
-    # Step 1: List available captions for the video
-    list_url = "https://www.googleapis.com/youtube/v3/captions"
-    params = {"part": "snippet", "videoId": video_id, "key": YOUTUBE_API_KEY}
-    r = requests.get(list_url, params=params, timeout=10)
-    if r.status_code != 200:
-        raise Exception(f"YouTube captions list failed: {r.status_code} {r.text[:200]}")
-
-    items = r.json().get("items", [])
-    if not items:
-        raise Exception("No captions available for this video via Data API")
-
-    # Step 2: Prefer manual English captions, then auto-generated, then any
-    caption_id = None
-    for track in items:
-        s = track.get("snippet", {})
-        if s.get("language") == "en" and s.get("trackKind") == "standard":
-            caption_id = track["id"]
-            break
-    if not caption_id:
-        for track in items:
-            s = track.get("snippet", {})
-            if s.get("language") == "en":
-                caption_id = track["id"]
-                break
-    if not caption_id:
-        caption_id = items[0]["id"]  # Fallback: first available
-
-    # Step 3: Download the caption track as SRT
-    dl_url = f"https://www.googleapis.com/youtube/v3/captions/{caption_id}"
-    params = {"tfmt": "srt", "key": YOUTUBE_API_KEY}
-    headers = {"Accept": "text/plain"}
-    r = requests.get(dl_url, params=params, headers=headers, timeout=15)
-    if r.status_code == 403:
-        raise Exception("Caption download requires OAuth (video owner restrictions). Use fallback.")
-    if r.status_code != 200:
-        raise Exception(f"Caption download failed: {r.status_code} {r.text[:200]}")
-
-    # Step 4: Parse SRT into [{text, start, duration}] list
-    srt_text = r.text
-    segments = []
-    blocks = re.split(r'\n\n+', srt_text.strip())
-    for block in blocks:
-        lines = block.strip().split('\n')
-        if len(lines) < 3:
-            continue
-        # lines[0] = index, lines[1] = timecode, lines[2+] = text
-        time_match = re.match(
-            r'(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})',
-            lines[1]
-        )
-        if not time_match:
-            continue
-        h1, m1, s1, ms1, h2, m2, s2, ms2 = time_match.groups()
-        start = int(h1)*3600 + int(m1)*60 + int(s1) + int(ms1)/1000
-        end   = int(h2)*3600 + int(m2)*60 + int(s2) + int(ms2)/1000
-        text  = " ".join(lines[2:]).strip()
-        # Strip HTML tags that sometimes appear in SRT
-        text  = re.sub(r'<[^>]+>', '', text).strip()
-        if text:
-            segments.append({"text": text, "start": start, "duration": end - start})
-
-    if not segments:
-        raise Exception("SRT parsed but no segments found")
-
-    return segments
+def get_free_proxies() -> List[str]:
+    """Fetch free proxies from ProxyScrape and cache them for 30 minutes."""
+    global _PROXY_CACHE, _PROXY_CACHE_TIME
+    import time
+    
+    # Return cache if less than 30 mins old
+    if _PROXY_CACHE and (time.time() - _PROXY_CACHE_TIME < 1800):
+        return _PROXY_CACHE
+        
+    try:
+        url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=yes&anonymity=all"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            proxies = []
+            for line in r.text.split('\n'):
+                line = line.strip()
+                if line:
+                    proxies.append(f"http://{line}")
+            
+            if proxies:
+                _PROXY_CACHE = proxies
+                _PROXY_CACHE_TIME = time.time()
+                return _PROXY_CACHE
+    except Exception as e:
+        print(f"Failed to fetch proxies: {e}")
+        
+    return _PROXY_CACHE
 
 def get_youtube_transcript(video_id: str) -> List[dict]:
     """
     Master transcript fetcher with layered fallbacks:
-    1. YouTube Data API v3 (works from any IP, needs API key)
-    2. youtube-transcript-api (may be blocked on EC2 IPs)
+    1. youtube-transcript-api with free rotating proxies
+    2. youtube-transcript-api with custom PROXY_URL (if set)
+    3. youtube-transcript-api direct (may be blocked on cloud IPs)
     Returns list of {text, start, duration} dicts.
     """
-    # Attempt 1: YouTube Data API v3
-    if YOUTUBE_API_KEY:
+    errors = []
+    
+    # ── Attempt 1: Custom Proxy (if PROXY_URL is set) ──
+    proxy_url = os.getenv("PROXY_URL")
+    if proxy_url:
         try:
-            print(f"[transcript] Trying YouTube Data API v3 for {video_id}")
-            segments = fetch_transcript_via_api(video_id)
-            print(f"[transcript] Data API success: {len(segments)} segments")
-            return segments
+            print(f"[transcript] Trying custom proxy for {video_id}")
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            ytt_api = YouTubeTranscriptApi(
+                proxy_config=GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+            )
+            return _fetch_with_ytt(ytt_api, video_id)
         except Exception as e:
-            print(f"[transcript] Data API failed: {e}, trying fallback...")
+            errors.append(f"Custom proxy: {e}")
 
-    # Attempt 2: youtube-transcript-api (may work if IP is not blocked)
+    # ── Attempt 2: Free Rotating Proxies ──
     try:
-        print(f"[transcript] Trying youtube-transcript-api for {video_id}")
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.list(video_id)
-        try:
-            transcript = transcript_list.find_manually_created_transcript(['en'])
-        except Exception:
-            try:
-                transcript = transcript_list.find_generated_transcript(['en'])
-            except Exception:
-                transcript = next(iter(transcript_list))
+        import random
+        from youtube_transcript_api.proxies import GenericProxyConfig
+        
+        proxies = get_free_proxies()
+        if proxies:
+            # Pick a few random proxies to try
+            sampled_proxies = random.sample(proxies, min(8, len(proxies)))
+            for proxy in sampled_proxies:
                 try:
-                    transcript = transcript.translate('en')
-                except Exception:
-                    pass
-        raw_data = transcript.fetch()
-        # Normalize to dicts
-        result = []
-        for s in raw_data:
-            result.append({
-                "text": s.text if hasattr(s, 'text') else s.get('text', ''),
-                "start": s.start if hasattr(s, 'start') else s.get('start', 0),
-                "duration": s.duration if hasattr(s, 'duration') else s.get('duration', 0),
-            })
-        print(f"[transcript] youtube-transcript-api success: {len(result)} segments")
+                    print(f"[transcript] Trying free proxy {proxy} for {video_id}")
+                    ytt_api = YouTubeTranscriptApi(
+                        proxy_config=GenericProxyConfig(http_url=proxy, https_url=proxy)
+                    )
+                    result = _fetch_with_ytt(ytt_api, video_id)
+                    print(f"[transcript] Free proxy success: {len(result)} segments")
+                    return result
+                except Exception as e:
+                    # Ignore proxy failures, just try the next one
+                    continue
+            errors.append("All free proxies failed.")
+        else:
+            errors.append("No free proxies available.")
+    except Exception as e:
+        errors.append(f"Free proxy setup failed: {e}")
+
+    # ── Attempt 3: Direct (may fail on cloud IPs) ──
+    try:
+        print(f"[transcript] Trying direct connection for {video_id}")
+        ytt_api = YouTubeTranscriptApi()
+        result = _fetch_with_ytt(ytt_api, video_id)
+        print(f"[transcript] Direct connection success: {len(result)} segments")
         return result
-    except Exception as e2:
-        raise Exception(f"All transcript methods failed. Data API: check key. Fallback: {str(e2)}")
+    except Exception as e:
+        errors.append(f"Direct connection: {e}")
+
+    error_summary = " | ".join(errors)
+    raise Exception(f"Failed to fetch YouTube transcript. Methods tried: {error_summary}")
+
+def _fetch_with_ytt(ytt_api, video_id: str) -> List[dict]:
+    """Helper: fetch transcript using a YouTubeTranscriptApi instance."""
+    transcript_list = ytt_api.list(video_id)
+    try:
+        transcript = transcript_list.find_manually_created_transcript(['en'])
+    except Exception:
+        try:
+            transcript = transcript_list.find_generated_transcript(['en'])
+        except Exception:
+            # Fallback to whatever language is available
+            transcript = next(iter(transcript_list))
+            try:
+                transcript = transcript.translate('en')
+            except Exception:
+                pass
+    raw_data = transcript.fetch()
+    result = []
+    for s in raw_data:
+        result.append({
+            "text": s.text if hasattr(s, 'text') else s.get('text', ''),
+            "start": s.start if hasattr(s, 'start') else s.get('start', 0),
+            "duration": s.duration if hasattr(s, 'duration') else s.get('duration', 0),
+        })
+    return result
+
+
+def _parse_vtt(vtt_text: str) -> List[dict]:
+    """Parse a VTT subtitle file into a list of {text, start, duration} dicts."""
+    segments = []
+    # Try XML first (some Invidious instances return XML)
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(vtt_text)
+        for text_elem in root.iter("text"):
+            start = float(text_elem.get("start", 0))
+            dur = float(text_elem.get("dur", 2.0))
+            text = text_elem.text or ""
+            text = re.sub(r'<[^>]+>', '', text).strip()
+            text = text.replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", '"')
+            if text:
+                segments.append({"text": text, "start": start, "duration": dur})
+        if segments:
+            return segments
+    except Exception:
+        pass
+
+    # Parse as VTT
+    vtt_pattern = re.compile(
+        r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\n(.+?)(?=\n\n|\n\d{2}:\d{2}|\Z)',
+        re.DOTALL
+    )
+    for match in vtt_pattern.finditer(vtt_text):
+        start_str, end_str, text = match.groups()
+        parts = start_str.split(":")
+        start = int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        parts2 = end_str.split(":")
+        end = int(parts2[0]) * 3600 + int(parts2[1]) * 60 + float(parts2[2])
+        text = re.sub(r'<[^>]+>', '', text).strip()
+        if text:
+            segments.append({"text": text, "start": start, "duration": end - start})
+
+    return segments
 
 def is_twitter(url: str) -> bool:
     domain = urlparse(url).netloc.lower()
