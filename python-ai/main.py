@@ -24,6 +24,7 @@ app = FastAPI(title="TrulyLied AI Service", debug=True)
 HF_TOKEN = os.getenv("HF_TOKEN")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")  # YouTube Data API v3 key
 
 # Generative LLM for claim decomposition and fact-check grading
 HF_LLM_MODEL = "Qwen/Qwen2.5-72B-Instruct"
@@ -103,6 +104,129 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
             params = dict(x.split('=') for x in parsed.query.split('&') if '=' in x)
             return params.get("v")
     return None
+
+def fetch_transcript_via_api(video_id: str) -> List[dict]:
+    """
+    Fetch a YouTube transcript using the official YouTube Data API v3.
+    Returns a list of dicts: [{text, start, duration}, ...]
+    Works from any IP including AWS — bypasses the youtube-transcript-api block.
+    Requires YOUTUBE_API_KEY env var.
+    """
+    if not YOUTUBE_API_KEY:
+        raise Exception("YOUTUBE_API_KEY not set")
+
+    # Step 1: List available captions for the video
+    list_url = "https://www.googleapis.com/youtube/v3/captions"
+    params = {"part": "snippet", "videoId": video_id, "key": YOUTUBE_API_KEY}
+    r = requests.get(list_url, params=params, timeout=10)
+    if r.status_code != 200:
+        raise Exception(f"YouTube captions list failed: {r.status_code} {r.text[:200]}")
+
+    items = r.json().get("items", [])
+    if not items:
+        raise Exception("No captions available for this video via Data API")
+
+    # Step 2: Prefer manual English captions, then auto-generated, then any
+    caption_id = None
+    for track in items:
+        s = track.get("snippet", {})
+        if s.get("language") == "en" and s.get("trackKind") == "standard":
+            caption_id = track["id"]
+            break
+    if not caption_id:
+        for track in items:
+            s = track.get("snippet", {})
+            if s.get("language") == "en":
+                caption_id = track["id"]
+                break
+    if not caption_id:
+        caption_id = items[0]["id"]  # Fallback: first available
+
+    # Step 3: Download the caption track as SRT
+    dl_url = f"https://www.googleapis.com/youtube/v3/captions/{caption_id}"
+    params = {"tfmt": "srt", "key": YOUTUBE_API_KEY}
+    headers = {"Accept": "text/plain"}
+    r = requests.get(dl_url, params=params, headers=headers, timeout=15)
+    if r.status_code == 403:
+        raise Exception("Caption download requires OAuth (video owner restrictions). Use fallback.")
+    if r.status_code != 200:
+        raise Exception(f"Caption download failed: {r.status_code} {r.text[:200]}")
+
+    # Step 4: Parse SRT into [{text, start, duration}] list
+    srt_text = r.text
+    segments = []
+    blocks = re.split(r'\n\n+', srt_text.strip())
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) < 3:
+            continue
+        # lines[0] = index, lines[1] = timecode, lines[2+] = text
+        time_match = re.match(
+            r'(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})',
+            lines[1]
+        )
+        if not time_match:
+            continue
+        h1, m1, s1, ms1, h2, m2, s2, ms2 = time_match.groups()
+        start = int(h1)*3600 + int(m1)*60 + int(s1) + int(ms1)/1000
+        end   = int(h2)*3600 + int(m2)*60 + int(s2) + int(ms2)/1000
+        text  = " ".join(lines[2:]).strip()
+        # Strip HTML tags that sometimes appear in SRT
+        text  = re.sub(r'<[^>]+>', '', text).strip()
+        if text:
+            segments.append({"text": text, "start": start, "duration": end - start})
+
+    if not segments:
+        raise Exception("SRT parsed but no segments found")
+
+    return segments
+
+def get_youtube_transcript(video_id: str) -> List[dict]:
+    """
+    Master transcript fetcher with layered fallbacks:
+    1. YouTube Data API v3 (works from any IP, needs API key)
+    2. youtube-transcript-api (may be blocked on EC2 IPs)
+    Returns list of {text, start, duration} dicts.
+    """
+    # Attempt 1: YouTube Data API v3
+    if YOUTUBE_API_KEY:
+        try:
+            print(f"[transcript] Trying YouTube Data API v3 for {video_id}")
+            segments = fetch_transcript_via_api(video_id)
+            print(f"[transcript] Data API success: {len(segments)} segments")
+            return segments
+        except Exception as e:
+            print(f"[transcript] Data API failed: {e}, trying fallback...")
+
+    # Attempt 2: youtube-transcript-api (may work if IP is not blocked)
+    try:
+        print(f"[transcript] Trying youtube-transcript-api for {video_id}")
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
+        try:
+            transcript = transcript_list.find_manually_created_transcript(['en'])
+        except Exception:
+            try:
+                transcript = transcript_list.find_generated_transcript(['en'])
+            except Exception:
+                transcript = next(iter(transcript_list))
+                try:
+                    transcript = transcript.translate('en')
+                except Exception:
+                    pass
+        raw_data = transcript.fetch()
+        # Normalize to dicts
+        result = []
+        for s in raw_data:
+            result.append({
+                "text": s.text if hasattr(s, 'text') else s.get('text', ''),
+                "start": s.start if hasattr(s, 'start') else s.get('start', 0),
+                "duration": s.duration if hasattr(s, 'duration') else s.get('duration', 0),
+            })
+        print(f"[transcript] youtube-transcript-api success: {len(result)} segments")
+        return result
+    except Exception as e2:
+        raise Exception(f"All transcript methods failed. Data API: check key. Fallback: {str(e2)}")
 
 def is_twitter(url: str) -> bool:
     domain = urlparse(url).netloc.lower()
@@ -278,45 +402,24 @@ def extract_content(req: ExtractRequest):
         if not video_id:
             raise HTTPException(status_code=400, detail="Invalid YouTube URL")
         try:
-            ytt_api = YouTubeTranscriptApi()
-            transcript_list = ytt_api.list(video_id)
-            try:
-                transcript = transcript_list.find_manually_created_transcript(['en'])
-            except Exception:
-                try:
-                    transcript = transcript_list.find_generated_transcript(['en'])
-                except Exception:
-                    # If no English transcript is available, get the first available one
-                    transcript = next(iter(transcript_list))
-                    try:
-                        transcript = transcript.translate('en')
-                    except Exception:
-                        pass # Use original language if translation is disabled
-            
-            raw_data = transcript.fetch()
-            formatter = TextFormatter()
-            text = formatter.format_transcript(raw_data)
+            raw_data = get_youtube_transcript(video_id)
+            text = " ".join(s["text"] for s in raw_data if s.get("text"))
             text = " ".join(text.split("\n"))
             lang = detect_language(text)
             lang_hint = f" (Language detected: {lang})" if lang != "en" else ""
-            return ExtractResponse(text=text, content_type="youtube", domain=domain, title=f"YouTube Video ({video_id}){lang_hint}", author="")
+            return ExtractResponse(
+                text=text,
+                content_type="youtube",
+                domain=domain,
+                title=f"YouTube Video ({video_id}){lang_hint}",
+                author=""
+            )
         except Exception as e:
-            # Fallback to yt-dlp to extract description if transcripts are rate-limited or disabled
-            try:
-                import yt_dlp
-                ydl_opts = {'quiet': True, 'skip_download': True}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(video_id, download=False)
-                    desc = info.get('description', '')
-                    title = info.get('title', f'YouTube Video ({video_id})')
-                    author = info.get('uploader', '')
-                    text = f"{title}\n\n{desc}"
-                    if not text.strip():
-                        text = "The video transcript is unavailable and the description is empty. We cannot verify claims."
-                    return ExtractResponse(text=text, content_type="youtube", domain=domain, title=title, author=author)
-            except Exception as yte:
-                print(f"[extract] yt-dlp fallback failed: {yte}")
-                raise HTTPException(status_code=500, detail=f"YouTube Rate Limit Reached: Failed to fetch transcript or description. ({str(e)})")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch YouTube transcript: {str(e)}. "
+                       f"Ensure YOUTUBE_API_KEY is set in the environment."
+            )
     else:
         # Try fetching with requests first using a real User-Agent
         downloaded = None
@@ -389,25 +492,15 @@ def extract_live_transcript(req: LiveExtractRequest):
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-    # Fetch the raw timestamped transcript
+    # Fetch the raw timestamped transcript (uses Data API v3 if key is set)
     try:
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.list(video_id)
-        try:
-            transcript = transcript_list.find_manually_created_transcript(['en'])
-        except Exception:
-            try:
-                transcript = transcript_list.find_generated_transcript(['en'])
-            except Exception:
-                transcript = next(iter(transcript_list))
-                try:
-                    transcript = transcript.translate('en')
-                except Exception:
-                    pass
-
-        raw_data = transcript.fetch()
+        raw_data = get_youtube_transcript(video_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch transcript: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch transcript: {str(e)}. "
+                   f"Ensure YOUTUBE_API_KEY is set in the environment."
+        )
 
     # Skip yt-dlp title fetch for live mode — it adds 10-20s latency.
     # The frontend already knows the video ID from the URL.
