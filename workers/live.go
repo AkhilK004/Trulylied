@@ -32,7 +32,7 @@ func ExtractLiveTranscript(url string, windowSeconds int) (*LiveExtractResult, e
 		"window_seconds": windowSeconds,
 	})
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Post(pythonServiceURL+"/extract-live", "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to call python AI service: %w", err)

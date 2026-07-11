@@ -45,7 +45,7 @@ func IsYouTubeURL(rawURL string) bool {
 func Extract(targetURL string) (*ExtractionResult, error) {
 	payload, _ := json.Marshal(map[string]string{"url": targetURL})
 	
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Post(pythonServiceURL+"/extract", "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to call python AI service: %w", err)
